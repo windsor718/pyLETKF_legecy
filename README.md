@@ -1,5 +1,5 @@
 # pyLETKF  
-## (Python wrapper for the Local Transform Ensemble Kalman Filter)  
+## (Python wrapper for the Local Ensemble Transform Kalman Filter)  
 
 ### Acknowledgements  
 This work is originally stemmed from the following work by Mr. Daiki Ikeshima:  
