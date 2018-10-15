@@ -1,4 +1,9 @@
 from setuptools import setup
+import argparse
+
+mklDir = /opt/intel/mkl
+
+# 20181015 need fortran compilation discription
 
 setup(
     name='pyletkf',

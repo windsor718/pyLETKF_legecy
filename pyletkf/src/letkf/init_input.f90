@@ -2,17 +2,17 @@ module init_input_mod
 contains
 
 subroutine init_input
-!set input declaration
-use mod_input, only simDir,simFile,obsDir,obsFile,&
-                    assimN,assimS,assimW,assimE,&
-                    patch,obsErr,errExp,&
-                    nLon,nLat,res
+    !set input declaration
+    use mod_input, only simDir,simFile,obsDir,obsFile,&
+                        assimN,assimS,assimW,assimE,&
+                        patch,obsErr,errExp,&
+                        nLon,nLat,res
 
-implicit none
+    implicit none
 
-open(nSetNum,file="./namelist.txt",status="old")
-read(nSetNum,"input")
-close(nSetNum)
+    open(nSetNum,file="./namelist.txt",status="old")
+    read(nSetNum,"input")
+    close(nSetNum)
 
 end subroutine init_input
 

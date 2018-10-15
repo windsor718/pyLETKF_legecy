@@ -13,13 +13,13 @@ from multiprocessing import Process
 
 class LETKF(object):
     
-    def __init__(self):
+    def __init__(self,configPath="./config.ini"):
         """
             initial settings.
         """
         # Read configuraion file.
         self.config = configparser.SafeConfigParser()
-        self.config.read("./config.ini")
+        self.config.read(configPath)
 
         self.assimN = self.config.get("assimilation","assimN")
         self.assimS = self.config.get("assimilation","assimS")
