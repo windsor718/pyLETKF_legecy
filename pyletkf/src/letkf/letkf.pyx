@@ -15,6 +15,12 @@ def letkf(np.ndarray[DTYPE_t,ndim=3] allx, np.ndarray[DTYPE_t,ndim=2] observatio
             observation: numpy.ndarray([nLat,nLon]): gridded observation with observed or undef values
             ocean: numpy.ndarray([nLat,nLon]): gridded ocean mask
             excGrids: numpy.ndarray([nLat,nLon]): grids to exclude
+            patch: int: patch size
+            eNum: int: number of ensemble members
+            assimE,assimW,assimN,assimS: float: assimilation boundary
+            east,west,north,south: float: simulation boundary
+            res: float: simulation horizontal resolution in degree
+            undef: float: undef value for the observation
             errfix: float: observation error to constract Rinv. Only float value is supported at V-1.0.0.
     """
 
