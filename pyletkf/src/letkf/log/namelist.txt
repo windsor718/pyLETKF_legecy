@@ -1,0 +1,13 @@
+&input
+assimN=80
+assimS=-80
+assimE=170
+assimW=-170
+ensMem=20
+errexp=1.0
+srcDir=/data4/yuta/SWOTDA/data/raw/
+nLon=1440
+nlat=720
+res=0.25
+/
+!
