@@ -4,10 +4,10 @@ import numpy as np
 
 ext_modules = [
     Extension('letkf',
-              sources=['./letkf/letkf.pyx'],
+              sources=['./cysrc/letkf.pyx'],
               include_dirs=[np.get_include()],
-              extra_compile_args=['-O3','-fopenmp'],
-              extra_link_args=['-fopenmp'])
+              extra_compile_args=['-O3'],
+              extra_link_args=[])
 ]
 
 setup(
