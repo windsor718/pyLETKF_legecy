@@ -3,12 +3,12 @@ import numpy as np
 import scipy.linalg as sp_linalg
 cimport numpy as np
 
-DTYPE = np.float32
+DTYPE = np.float64
 DTYPE_int = np.int64
-ctypedef np.float32_t DTYPE_t
-ctypedef np.int_t DTYPE_t_int
+ctypedef np.float64_t DTYPE_t
+ctypedef np.int64_t DTYPE_t_int
 
-def letkf(np.ndarray[DTYPE_t,ndim=3] allx, np.ndarray[DTYPE_t,ndim=2] observation, np.ndarray[DTYPE_t,ndim=2] ocean, np.ndarray[DTYPE_t,ndim=2] excGrids, int patch, int eNum, float assimE, float assimW, float assimN, float assimS, float east, float west, float north, float south, float res, float undef, float errfix):
+def letkf(np.ndarray[DTYPE_t,ndim=3] allx, np.ndarray[DTYPE_t,ndim=2] observation, np.ndarray[DTYPE_t,ndim=2] obserr, np.ndarray[DTYPE_t,ndim=2] ocean, np.ndarray[DTYPE_t,ndim=2] excGrids, int patch, int eNum, float assimE, float assimW, float assimN, float assimS, float east, float west, float north, float south, float res, float undef):
     
     """
     Data Assimilation with Local Ensemble Transformed Kalman Filter
@@ -27,7 +27,7 @@ def letkf(np.ndarray[DTYPE_t,ndim=3] allx, np.ndarray[DTYPE_t,ndim=2] observatio
     """
 
     # c type declaration
-    assert allx.dtype==DTYPE and observation.dtype==DTYPE and ocean.dtype==DTYPE and excGrids.dtype==DTYPE
+    assert allx.dtype==DTYPE and observation.dtype==DTYPE and obserr.dtype==DTYPE and ocean.dtype==DTYPE and excGrids.dtype==DTYPE
 
     cdef int patch_side = patch*2+1
     cdef int patch_nums = patch_side**2
@@ -40,7 +40,9 @@ def letkf(np.ndarray[DTYPE_t,ndim=3] allx, np.ndarray[DTYPE_t,ndim=2] observatio
     cdef np.ndarray[DTYPE_t,ndim=2] xf_m = np.ones([patch_nums,1],dtype=DTYPE)
     cdef np.ndarray[DTYPE_t,ndim=2] xf_me = np.ones([patch_nums,eNum],dtype=DTYPE)
     cdef np.ndarray[DTYPE_t,ndim=2] xa = np.ones([patch_nums,eNum],dtype=DTYPE)
+    cdef np.ndarray[DTYPE_t,ndim=2] local_obs = np.ones([patch_side,patch_side],dtype=DTYPE)
     cdef np.ndarray[DTYPE_t,ndim=1] local_obs_line = np.ones([patch_nums],dtype=DTYPE)
+    cdef np.ndarray[DTYPE_t,ndim=1] local_obsErr_line = np.ones([patch_nums],dtype=DTYPE)
     cdef np.ndarray[DTYPE_t,ndim=1] local_ocean_line = np.ones([patch_nums],dtype=DTYPE)
     cdef np.ndarray[DTYPE_t,ndim=1] local_exc_line = np.ones([patch_nums],dtype=DTYPE)
     cdef int ovs
@@ -65,6 +67,7 @@ def letkf(np.ndarray[DTYPE_t,ndim=3] allx, np.ndarray[DTYPE_t,ndim=2] observatio
 
     cdef np.ndarray[DTYPE_t,ndim=2] H = np.zeros([patch_nums,patch_nums],dtype=DTYPE)
     cdef np.ndarray[DTYPE_t,ndim=2] I = np.identity(eNum,dtype=DTYPE)
+    cdef np.ndarray[DTYPE_t,ndim=2] R = np.identity(patch_nums,dtype=DTYPE)
     cdef np.ndarray[DTYPE_t,ndim=2] Rinv = np.identity(patch_nums,dtype=DTYPE)
     cdef np.ndarray[DTYPE_t,ndim=2] Ef = np.zeros([patch_nums,eNum],dtype=DTYPE)
     cdef np.ndarray[DTYPE_t,ndim=2] Ea = np.zeros([patch_nums,eNum],dtype=DTYPE)
@@ -87,9 +90,10 @@ def letkf(np.ndarray[DTYPE_t,ndim=3] allx, np.ndarray[DTYPE_t,ndim=2] observatio
             xRange_, yRange_ = np.meshgrid(xRange,yRange)
             xRange_[np.where(xRange_>lon_end)] = 0 #whatever !circulation look up
             yRange_[np.where(yRange_>lat_end)] = 0 #whatever !circulation look up
-            
+
             xt = observation[yRange_,xRange_].flatten()
-            local_obs_line = np.ones([patch_nums],dtype=DTYPE).flatten()
+            local_obs = np.ones([patch_side,patch_side],dtype=DTYPE)
+            local_obsErr_line = obserr[yRange_,xRange_].flatten()
             local_ocean_line = ocean[yRange_,xRange_].flatten()
             local_exc_line = excGrids[yRange_,xRange_].flatten()
             xf = allx[:,yRange_,xRange_].reshape(-1,eNum)
@@ -97,24 +101,25 @@ def letkf(np.ndarray[DTYPE_t,ndim=3] allx, np.ndarray[DTYPE_t,ndim=2] observatio
             for i in range(0,eNum):
                 xf_me[:,i] = xf_mean
             xf_m = xf_mean.reshape(-1,1)
-
+            
             if pLat_start < lat_start:
                 diff = lat_start - pLat_start
-                local_obs_line[0:diff] = 0
+                local_obs[0:diff] = 0
             if pLat_end > lat_end:
                 diff = lat_end - pLat_start
-                local_obs_line[diff+1::] = 0
+                local_obs[diff+1::] = 0
             if pLon_start < lon_start:
                 diff = lon_start - pLon_start
-                local_obs_line[0:diff] = 0
+                local_obs[:,0:diff] = 0
             if pLon_end > lon_end:
                 diff = lon_end - pLon_start
-                local_obs_line[diff+1::] = 0
+                local_obs[:,diff+1::] = 0
+            local_obs_line = local_obs.flatten()
+
 
             local_obs_line[np.where(xt-undef < 1.)] = 0
             local_obs_line[np.where(local_ocean_line == 1.)] = 0
             local_obs_line[np.where(local_exc_line == 0.)] = 0
-            
             ovs = local_obs_line.sum()
             center = int(patch_nums/2)
             if ovs > 0 and local_ocean_line[center] == 0:
@@ -124,12 +129,11 @@ def letkf(np.ndarray[DTYPE_t,ndim=3] allx, np.ndarray[DTYPE_t,ndim=2] observatio
                 """
                 # initialize
                 H = np.zeros([patch_nums,patch_nums],dtype=DTYPE)
-                Rinv = np.identity(patch_nums,dtype=DTYPE)
                 #
 
                 H[np.where(local_obs_line == 1.)[0],np.where(local_obs_line == 1.)[0]] = 1
                 Ef = xf - xf_m
-                Rinv = Rinv*(errfix**2)**(-1)
+                Rinv = np.diag((local_obsErr_line**2)**(-1)).astype(DTYPE)
                 
                 HEft = np.dot(H,Ef).T # (patch_num x eNum)T = eNum x patch_num
                 HEf = np.dot(H,Ef) # patch_num x eNum
