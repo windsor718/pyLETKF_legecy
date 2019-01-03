@@ -3,46 +3,89 @@
 
 import os
 import numpy as np
+import pandas as pd
 import datetime
 import configparser
-from . import letkf
+import pickle
+import exTool
+import letkf
 
 class LETKF_core(object):
     
-    required_instance_vals = ['nLon', 'east', 'assimE', 'nLat', 'res', 'patch', 'assimS', 'west', 'assimW', 'north', 'assimN', 'ensMem', 'south', 'undef']
-    instance_vals_num = len(required_instance_vals)
+    required_instance_vals_grid = ['mode','nLon', 'east', 'assimE', 'nLat', 'res', 'patch', 'assimS', 'west', 'assimW', 'north', 'assimN', 'ensMem', 'south', 'undef']
+    required_instance_vals_vector = ['mode','ensMem','patchArea','networkFile','nReach','undef']
 
-    def __init__(self,configPath=None):
+    def __init__(self,configPath=None,mode="grid",use_cache=False):
         """
             initial settings.
         """
+
+        self.mode = mode
+        self.reach_start = 1
+        self.use_cache = use_cache
+        self.localPatchPath = "./localPatch.obj"
+
         if type(configPath) == str and os.path.exists(configPath):
             # Read configuraion file.
             print("Read variables from configuration...")
             config = configparser.ConfigParser()
             config.read(configPath)
 
-            self.assimN = float(config.get("assimilation","assimN"))
-            self.assimS = float(config.get("assimilation","assimS"))
-            self.assimE = float(config.get("assimilation","assimE"))
-            self.assimW = float(config.get("assimilation","assimW"))
-            self.patch  = int(config.get("assimilation","patch"))
-            self.ensMem = int(config.get("assimilation","ensMem"))
-            self.nLon   = int(config.get("model","nLon"))
-            self.nLat   = int(config.get("model","nLat"))
-            self.res    = float(config.get("model","res"))
-            self.north  = float(config.get("model","north"))
-            self.south  = float(config.get("model","south"))
-            self.east   = float(config.get("model","east"))
-            self.west   = float(config.get("model","west"))
-            self.undef  = float(config.get("observation","undef"))
+            if mode == "grid":
+                self.assimN = float(config.get("assimilation","assimN"))
+                self.assimS = float(config.get("assimilation","assimS"))
+                self.assimE = float(config.get("assimilation","assimE"))
+                self.assimW = float(config.get("assimilation","assimW"))
+                self.patch  = int(config.get("assimilation","patch"))
+                self.ensMem = int(config.get("assimilation","ensMem"))
+                self.nLon   = int(config.get("model","nLon"))
+                self.nLat   = int(config.get("model","nLat"))
+                self.res    = float(config.get("model","res"))
+                self.north  = float(config.get("model","north"))
+                self.south  = float(config.get("model","south"))
+                self.east   = float(config.get("model","east"))
+                self.west   = float(config.get("model","west"))
+                self.undef  = float(config.get("observation","undef"))
+
+            elif mode == "vector":
+                self.ensMem = int(config.get("assimilation","ensMem"))
+                self.patchArea = float(config.get("assimilation","patchArea"))
+                self.networkFile = str(config.get("model","networkFile"))
+                self.nReach = int(config.get("model","nReach"))
+                self.localPatchPath = str(config.get("assimilation","localPatchPath"))
+                self.undef = float(config.get("observation","undef"))
+
+            else:
+                raise IOError("mode %s is not supprted."%mode)
 
             print("############Check instance variables############")
             self.__showProperties()
             print("##############")
 
 
-    def letkf(self,ensembles,observation,obserr,ocean,excGrids):
+    def initialize(self):
+
+        if self.mode == "grid":
+            # check all instance variables are set.
+            self.__checkInstanceVals(self.required_instance_vals_grid)
+            # implementaion needed
+            # generate local patch
+            self.patches = self.__constLocalPatch_grid()
+
+        elif self.mode == "vector":
+            # check all instance variables are set.
+            self.__checkInstanceVals(self.required_instance_vals_vector)
+            if self.use_cache:
+                with open(self.localPatchPath,"rb") as f:
+                    self.patches = pickle.load(f)
+            else:
+                # generate local patch
+                self.patches = self.__constLocalPatch_vector(reach_start = self.reach_start)
+        else:
+            raise IOError("mode %s is not supoorted."%self.mode)
+
+        
+    def letkf_grid(self,ensembles,observation,obserr,ocean,excGrids):
         """
         Data Assimilation with Local Ensemble Transformed Kalman Filter
         inputs:
@@ -51,8 +94,6 @@ class LETKF_core(object):
             ocean: numpy.ndarray([nLat,nLon]): gridded ocean mask
             excGrids: numpy.ndarray([nLat,nLon]): grids to exclude
         """
-        # check all instance variables are set.
-        self.__checkInstanceVals()
         # check shapes are correspond with instance correctly
         eNum = ensembles.shape[0]
         if eNum != self.ensMem:
@@ -64,12 +105,32 @@ class LETKF_core(object):
     
         return xa
 
+    
+    def letkf_vector(self,ensembles,observation,obserr):
+        """
+        Data Assimilation with Local Ensemble Transformed Kalman Filter
+        inputs:
+            ensembles: numpy.ndarray([nReach,eNum]): ensemble simulation
+            observation: numpy.ndarray([nReach]): gridded observation with observed or undef values
+            obserr: numpy.ndarray([nReach]): observation error
+        """
 
-    def __checkInstanceVals(self):
+        # check shapes are correspond with instance correctly
+        eNum = ensembles.shape[0]
+        if eNum != self.ensMem:
+            raise IOError("Specified emsemble member %d is not match with the passed array shape %d." % (self.ensMem,eNum))
+        # main letkf
+        patch_array = np.array(self.patches)
+        xa = letkf.letkf(ensembles,observation,obserr,self.patches,self.ensMem,self.undef)
+
+        return xa
+        
+
+    def __checkInstanceVals(self,valList):
         
         keys = self.__dict__.keys()
-        if len(keys) != self.instance_vals_num:
-            nonDefined = set(self.required_instance_vals) - set(keys)  
+        if len(keys) < len(valList):
+            nonDefined = set(valList) - set(keys)  
             raise IOError("Not all instance variables defined. %s" % str(list(nonDefined)))
 
 
@@ -93,6 +154,19 @@ class LETKF_core(object):
             print("%s:%s" % (key,self.__dict__[key]))
 
 
+    def __constLocalPatch_vector(self,reach_start=1):
+
+        PATCHES = exTool.constLocalPatch_vector(self.networkFile,self.patchArea,self.nReach,self.localPatchPath)
+        print("constructing local patches...done")
+        print("saving as a cache...")
+        with open(self.localPatchPath,"wb") as f:
+            pickle.dump(PATCHES,f)
+        print("saved.\n\t%s"%self.localPatchPath)
+        
+        return PATCHES
+
+
 if __name__ == "__main__":
 
-    chunk = LETKF_core("./config.ini")
+    chunk = LETKF_core("./config.ini",mode="vector",use_cache=False)
+    chunk.initialize()
