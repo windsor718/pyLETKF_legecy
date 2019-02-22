@@ -106,24 +106,34 @@ class LETKF_core(object):
         return xa
 
     
-    def letkf_vector(self,ensembles,observation,obserr):
+    def letkf_vector(self,ensembles,observation,obserr,smoother=False):
         """
         Data Assimilation with Local Ensemble Transformed Kalman Filter
         inputs:
-            ensembles: numpy.ndarray([nReach,eNum]): ensemble simulation
+            ensembles: numpy.ndarray([nReach,nT,eNum]): ensemble simulation. 
+                       If smoother == False, then only the assimilation at time nT (last time step of the array) will happen. 
+                       If smoother == True, whole time series up to nT will be smoothed by the smoother.
             observation: numpy.ndarray([nReach]): gridded observation with observed or undef values
             obserr: numpy.ndarray([nReach]): observation error
+            smoother: default=False activate no cost LETKF smooter or not.
+        Notes:
+            Please note that ensembles[:,-1,:] should be the same time step as that of observations.
         """
-
+        outArray = ensembles.copy()
         # check shapes are correspond with instance correctly
         eNum = ensembles.shape[0]
         if eNum != self.ensMem:
             raise IOError("Specified emsemble member %d is not match with the passed array shape %d." % (self.ensMem,eNum))
         # main letkf
         patch_array = np.array(self.patches)
-        xa = letkf.letkf(ensembles,observation,obserr,self.patches,self.ensMem,self.undef)
+        xa,Ws = letkf.letkf(ensembles[:,-1,:],observation,obserr,self.patches,self.ensMem,self.undef)
+        outArray[:,-1,:] = xa
+        # smoother
+        if smoother:
+            xa = letkf.noCostSmoother(ensembles[:,0:-1,:],self.patches,Ws)
+            outArray[:,0:-1,:] = xa
 
-        return xa
+        return outArray
         
 
     def __checkInstanceVals(self,valList):

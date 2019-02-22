@@ -15,8 +15,8 @@ def letkf(np.ndarray[DTYPE_t,ndim=2] allx, np.ndarray[DTYPE_t,ndim=1] observatio
     """
     Data Assimilation with Local Ensemble Transformed Kalman Filter
         inputs:
-            allx: numpy.ndarray([nLat,nLon,eNum]): ensemble simulation
-            observation: numpy.ndarray([nLat,nLon]): gridded observation with observed or undef values
+            allx: numpy.ndarray([eNum,nReach]): ensemble simulation
+            observation: numpy.ndarray([nReach]): gridded observation with observed or undef values
             undef: float: undef value for the observation
     """
 
@@ -33,6 +33,7 @@ def letkf(np.ndarray[DTYPE_t,ndim=2] allx, np.ndarray[DTYPE_t,ndim=1] observatio
     cdef np.ndarray[DTYPE_t,ndim=2] xa
     cdef np.ndarray[DTYPE_t,ndim=1] local_obs_line
     cdef np.ndarray[DTYPE_t,ndim=1] local_obsErr_line
+    cdef list Ws = []
     cdef int ovs
     cdef int i
     cdef int reach
@@ -102,15 +103,58 @@ def letkf(np.ndarray[DTYPE_t,ndim=2] allx, np.ndarray[DTYPE_t,ndim=1] observatio
             Ea = np.dot(Ef,W)
             
             xa = xf_me + Ea
+            Ws.append(W)
  
         else:
             """
-                No observation is available in a local patch or the center of the patch is ocean.
+                No observation is available in a local patch.
                 No-assimilation. Return prior ensemble mean as a best guess.
             """
             xa = xf_me
+            W = 1
+            Ws.append(W)
  
         globalxa[:,reach] = xa[patch.index(reach),:]
  
-    return globalxa
+    return globalxa,Ws
 
+#@cython.boundscheck(False)
+#@cython.nonecheck(False)
+def noCostSmoother(np.ndarray[DTYPE_t,ndim=3] allx, list patches, list Ws):
+    """
+    No cost ensemble Kalman Smoother.
+        allx: np.ndarray[eNum,time,nReach]
+        Ws: Weight of Ef from LETKF
+    """
+    # c type declaration
+    assert allx.dtype==DTYPE
+
+    cdef int eNum = allx.shape[0]
+    cdef int nT = allx.shape[1]
+    cdef int nReach = allx.shape[2]
+    cdef int reach
+    
+    cdef np.ndarray[DTYPE_t,ndim=3] globalxa = np.zeros([eNum,nT,nReach],dtype=DTYPE)
+    # c type declaration ends
+
+    for reach in range(0,nReach):
+        # local patch
+        patch = patches[reach]
+        patch_nums = len(patch)
+        W = Ws[reach]
+        for t in range(0,nT):
+            xf = allx[:,t,patch].reshape(-1,eNum)
+            xf_mean = xf.mean(axis=1)
+            xf_me = np.ones([patch_nums,eNum])
+            for i in range(0,eNum):
+                xf_me[:,i] = xf_mean
+            xf_m = xf_mean.reshape(-1,1)
+            if type(W) is not int:
+                Ef = xf - xf_m
+                Ea = np.dot(Ef,W)
+                xa = xf_me + Ea
+            else:
+                xa = xf_me
+            globalxa[:,t,reach] = xa[patch.index(reach),:]
+
+    return globalxa
